@@ -11,6 +11,7 @@ from typing import Any, Dict, Tuple, Type
 
 import numpy as np
 import torch
+import h5py
 from PIL import Image
 from torch.utils.data import Dataset, IterableDataset
 from transformers import PreTrainedTokenizerBase
@@ -180,11 +181,13 @@ class EpisodicRLDSDataset(RLDSDataset):
 class DummyDataset(Dataset):
     def __init__(
         self,
+        data_root_dir: Path,
         action_tokenizer: ActionTokenizer,
         base_tokenizer: PreTrainedTokenizerBase,
         image_transform: ImageTransform,
         prompt_builder_fn: Type[PromptBuilder],
     ) -> None:
+        self.data_root_dir = data_root_dir
         self.action_tokenizer = action_tokenizer
         self.base_tokenizer = base_tokenizer
         self.image_transform = image_transform
@@ -194,19 +197,43 @@ class DummyDataset(Dataset):
         # per-dimension 1st and 99th action quantile. The values below correspond to "no normalization" for simplicity.
         self.dataset_statistics = {
             "dummy_dataset": {
-                "action": {"q01": np.zeros((7,), dtype=np.float32), "q99": np.ones((7,), dtype=np.float32)}
+                "action": {"q01": np.zeros((14,), dtype=np.float32), "q99": np.ones((14,), dtype=np.float32)}
             }
         }
 
     def __len__(self):
         # TODO =>> Replace with number of elements in your dataset!
-        return 10000
+        return 1
 
     def __getitem__(self, idx):
+        dataset_path = self.data_root_dir / f"episode_{idx}.hdf5"
         # TODO =>> Load image, action and instruction from disk -- we use dummy values
-        image = Image.fromarray(np.asarray(np.random.rand(224, 224, 3) * 255.0, dtype=np.uint8))
-        action = np.asarray(np.random.rand(7), dtype=np.float32)
-        instruction = "do something spectacular"
+        sample_full_episode = False
+        with h5py.File(dataset_path, "r") as root:
+            is_sim = root.attrs["sim"]
+            original_action_shape = root["/action"].shape
+            episode_len = original_action_shape[0]
+            if sample_full_episode:
+                start_ts = 0
+            else:
+                start_ts = np.random.choice(episode_len)
+            # get observation at start_ts only
+            qpos = root["/observations/qpos"][start_ts]
+            qvel = root["/observations/qvel"][start_ts]
+            image_dict = dict()
+            camera_names = ["cam_high", "cam_left_wrist", "cam_low", "cam_right_wrist"]
+            for cam_name in camera_names:
+                image_dict[cam_name] = Image.fromarray(np.array(root[f"/observations/images/{cam_name}"][start_ts]))
+            # get all actions after and including start_ts
+            if is_sim:
+                action = np.array(root["/action"][start_ts])
+                action_len = episode_len - start_ts
+            else:
+                action = np.array(root["/action"][max(0, start_ts - 1)]) # hack, to make timesteps more aligned
+                action_len = episode_len - max(0, start_ts - 1)
+        #image = Image.fromarray(np.asarray(np.random.rand(224, 224, 3) * 255.0, dtype=np.uint8))
+        #action = np.asarray(np.random.rand(7), dtype=np.float32)
+        instruction = "pick the silver bag and switch to another arm"
 
         # Add instruction to VLA prompt
         prompt_builder = self.prompt_builder_fn("openvla")
@@ -224,7 +251,7 @@ class DummyDataset(Dataset):
         # Tensorize =>> Run Image Transform to get `pixel_values` =>> Return
         #   =>> IMPORTANT :: IF WE'RE USING HF .forward(..., labels=labels), SHIFTING HAPPENS _INSIDE_ MODEL!
         input_ids, labels = torch.tensor(input_ids), torch.tensor(labels)
-        pixel_values = self.image_transform(image)
+        pixel_values = self.image_transform(image_dict["cam_high"])
 
         # [CRITICAL] We do not want to take the loss for anything but the predicted action tokens!
         labels[: -(len(action) + 1)] = IGNORE_INDEX
