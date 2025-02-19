@@ -149,6 +149,7 @@ cache/
 data/
 tmp/
 log/
+checkpoints/
 
 # Rollout videos and wandb logs
 rollouts/

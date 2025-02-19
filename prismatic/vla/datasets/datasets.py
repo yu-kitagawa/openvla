@@ -12,6 +12,8 @@ from typing import Any, Dict, Tuple, Type
 import numpy as np
 import torch
 import h5py
+import re
+import glob
 from PIL import Image
 from torch.utils.data import Dataset, IterableDataset
 from transformers import PreTrainedTokenizerBase
@@ -192,6 +194,19 @@ class DummyDataset(Dataset):
         self.base_tokenizer = base_tokenizer
         self.image_transform = image_transform
         self.prompt_builder_fn = prompt_builder_fn
+        
+        file_list = []
+        root_dir = self.data_root_dir / "aloha_sample"
+
+        for f in glob.glob("*/*.hdf5", root_dir=root_dir):
+            file_list.append(f)
+        
+        file_list.sort()
+        self.file_list = file_list
+        
+        csv_path = root_dir / "aloha_task_list.csv"
+        csv_data = np.loadtxt(csv_path, delimiter=",", skiprows=1, usecols=(1,2), dtype="unicode")
+        self.task_list = dict(csv_data)
 
         # Note =>> We expect the dataset to store statistics for action de-normalization. Specifically, we store the
         # per-dimension 1st and 99th action quantile. The values below correspond to "no normalization" for simplicity.
@@ -203,10 +218,10 @@ class DummyDataset(Dataset):
 
     def __len__(self):
         # TODO =>> Replace with number of elements in your dataset!
-        return 1
+        return len(self.file_list)
 
     def __getitem__(self, idx):
-        dataset_path = self.data_root_dir / f"episode_{idx}.hdf5"
+        dataset_path = self.data_root_dir / "aloha_sample" / self.file_list[idx]
         # TODO =>> Load image, action and instruction from disk -- we use dummy values
         sample_full_episode = False
         with h5py.File(dataset_path, "r") as root:
@@ -233,7 +248,8 @@ class DummyDataset(Dataset):
                 action_len = episode_len - max(0, start_ts - 1)
         #image = Image.fromarray(np.asarray(np.random.rand(224, 224, 3) * 255.0, dtype=np.uint8))
         #action = np.asarray(np.random.rand(7), dtype=np.float32)
-        instruction = "pick the silver bag and switch to another arm"
+        task_name = re.sub("/episode.*hdf5", "", self.file_list[idx])
+        instruction = self.task_list[task_name]
 
         # Add instruction to VLA prompt
         prompt_builder = self.prompt_builder_fn("openvla")
