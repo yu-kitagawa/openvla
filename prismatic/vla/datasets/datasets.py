@@ -208,11 +208,56 @@ class DummyDataset(Dataset):
         csv_data = np.loadtxt(csv_path, delimiter=",", skiprows=1, usecols=(1,2), dtype="unicode")
         self.task_list = dict(csv_data)
 
+        all_qpos_data = []
+        all_action_data = []
+        for idx in range(len(file_list)):
+            dataset_path = root_dir / self.file_list[idx]
+            with h5py.File(dataset_path, 'r') as root:
+                #qpos = root['/observations/qpos'][()]
+                #qvel = root['/observations/qvel'][()]
+                action = root['/action'][()]
+            if idx == 0:
+                action_array = action
+            else:
+                action_array = np.concatenate([action_array, action])
+            #all_qpos_data.append(torch.from_numpy(qpos))
+        #all_qpos_data = torch.stack(all_qpos_data)
+        all_action_data = torch.from_numpy(action_array)
+        all_action_data = all_action_data
+
+        # normalize action data
+        action_mean = all_action_data.mean(dim=0, keepdim=True)
+        action_std = all_action_data.std(dim=0, keepdim=True)
+        action_std = torch.clip(action_std, 1e-2, np.inf) # clipping
+        action_max, _ = all_action_data.max(dim=0, keepdim=True)
+        action_min, _ = all_action_data.min(dim=0, keepdim=True)
+        action_q01 = all_action_data.quantile(0.01, dim=0, keepdim=True)
+        action_q99 = all_action_data.quantile(0.99, dim=0, keepdim=True)
+
+        # normalize qpos data
+        #qpos_mean = all_qpos_data.mean(dim=[0, 1], keepdim=True)
+        #qpos_std = all_qpos_data.std(dim=[0, 1], keepdim=True)
+        #qpos_std = torch.clip(qpos_std, 1e-2, np.inf) # clipping
+
+        action_mean = action_mean.numpy().squeeze()
+        action_std = action_std.numpy().squeeze()
+        action_max = action_max.numpy().squeeze()
+        action_min = action_min.numpy().squeeze()
+        action_q01 = action_q01.numpy().squeeze()
+        action_q99 = action_q99.numpy().squeeze()
+
         # Note =>> We expect the dataset to store statistics for action de-normalization. Specifically, we store the
         # per-dimension 1st and 99th action quantile. The values below correspond to "no normalization" for simplicity.
         self.dataset_statistics = {
             "dummy_dataset": {
-                "action": {"q01": np.zeros((14,), dtype=np.float32), "q99": np.ones((14,), dtype=np.float32)}
+                "action": {
+                    "mean": action_mean.tolist(),
+                    "std": action_std.tolist(),
+                    "max": action_max.tolist(),
+                    "min": action_min.tolist(),
+                    "q01": action_q01.tolist(),
+                    "q99": action_q99.tolist()
+                }
             }
         }
 
