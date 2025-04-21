@@ -81,7 +81,7 @@ def load_and_preprocess_all_episodes(demo_paths, out_dataset_dir):
     Loads and preprocesses all episodes.
     Resizes all images in one episode before loading the next, to reduce memory usage.
     """
-    cam_names = ["cam_high", "cam_left_wrist", "cam_right_wrist"]
+    cam_names = ["cam_high", "cam_low", "cam_left_wrist", "cam_right_wrist"]
     idx = 0
     for demo in tqdm(demo_paths):
         qpos, qvel, effort, action, image_dict, is_sim = load_hdf5(demo)
@@ -128,6 +128,7 @@ def randomly_split(full_qpos, full_qvel, full_effort, full_action, full_image_di
     shuffled_action = [full_action[idx] for idx in indices]
     shuffled_image_dict = {
         "cam_high": [],
+        "cam_low": [],
         "cam_left_wrist": [],
         "cam_right_wrist": [],
     }
@@ -144,6 +145,7 @@ def randomly_split(full_qpos, full_qvel, full_effort, full_action, full_image_di
         action=shuffled_action[:num_episodes_train],
         image_dict=dict(
             cam_high=shuffled_image_dict["cam_high"][:num_episodes_train],
+            cam_low=shuffled_image_dict["cam_low"][:num_episodes_train],
             cam_left_wrist=shuffled_image_dict["cam_left_wrist"][:num_episodes_train],
             cam_right_wrist=shuffled_image_dict["cam_right_wrist"][:num_episodes_train],
         ),
@@ -155,6 +157,7 @@ def randomly_split(full_qpos, full_qvel, full_effort, full_action, full_image_di
         action=shuffled_action[num_episodes_train:],
         image_dict=dict(
             cam_high=shuffled_image_dict["cam_high"][num_episodes_train:],
+            cam_low=shuffled_image_dict["cam_low"][num_episodes_train:],
             cam_left_wrist=shuffled_image_dict["cam_left_wrist"][num_episodes_train:],
             cam_right_wrist=shuffled_image_dict["cam_right_wrist"][num_episodes_train:],
         ),
